@@ -24,7 +24,7 @@ EVA is built with a Python backend and a vanilla JavaScript frontend, orchestrat
 * **Backend**: **FastAPI** running on **Uvicorn** ASGI server.
 * **Frontend**: **HTML**, **Tailwind CSS**, **JavaScript**.
 * **Other**:
-    * **Response Generation**: Google Gemini (`gemini-1.5-flash`)
+    * **Response Generation**: Google Gemini (`gemini-flash`)
     * **Speech-to-Text (STT)**: `faster-whisper`
     * **Text-to-Speech (TTS)**: ElevenLab TTS
     * **Facial Emotion Recognition**: **TensorFlow.js** with MediaPipe Face Mesh
