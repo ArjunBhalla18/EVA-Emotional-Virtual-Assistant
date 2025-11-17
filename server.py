@@ -24,9 +24,9 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 TTS_VOICE = os.getenv("TTS_VOICE", "21m00Tcm4TlvDq8ikWAM") 
 
 if not GEMINI_API_KEY:
-    raise ValueError("❌ Missing GEMINI_API_KEY in gemini.env.")
+    raise ValueError("Missing GEMINI_API_KEY in gemini.env.")
 if not ELEVENLABS_API_KEY:
-    logger.warning("⚠️ ELEVENLABS_API_KEY missing. TTS will not work.")
+    logger.warning("ELEVENLABS_API_KEY missing. TTS will not work.")
 
 genai.configure(api_key=GEMINI_API_KEY)
 tts_client = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
@@ -45,7 +45,7 @@ app.mount("/static", StaticFiles(directory=".", html=True), name="static")
 
 logger.info("Loading Whisper model...")
 whisper_model = whisper.load_model("small")
-logger.info("✅ Whisper model loaded successfully.")
+logger.info("Whisper model loaded successfully.")
 
 conversation_history = {}
 
