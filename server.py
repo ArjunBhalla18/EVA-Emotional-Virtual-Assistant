@@ -1,37 +1,38 @@
 import os
 import uuid
 import shutil
-import asyncio
-import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from openai import OpenAI
-from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-from faster_whisper import WhisperModel
+from dotenv import load_dotenv
+import whisper
 import io
 import json
-import base64
 from typing import Optional
 import logging
+import google.generativeai as genai
+from elevenlabs import ElevenLabs
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("server")
 
-# Load environment variables
 load_dotenv("gemini.env")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+TTS_VOICE = os.getenv("TTS_VOICE", "21m00Tcm4TlvDq8ikWAM") 
 
-if not OPENAI_API_KEY or not GEMINI_API_KEY:
-    raise ValueError("Missing API keys. Please check your gemini.env file.")
+if not GEMINI_API_KEY:
+    raise ValueError("❌ Missing GEMINI_API_KEY in gemini.env.")
+if not ELEVENLABS_API_KEY:
+    logger.warning("⚠️ ELEVENLABS_API_KEY missing. TTS will not work.")
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
+tts_client = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
+gemini_model = genai.GenerativeModel("models/gemini-flash-latest")
 
-app = FastAPI(title="EVA Therapy Bot")
+app = FastAPI(title="EVA Therapy Bot (Gemini Version)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,123 +41,84 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 app.mount("/static", StaticFiles(directory=".", html=True), name="static")
 
-# Whisper
 logger.info("Loading Whisper model...")
-whisper_model = WhisperModel(
-    "small",
-    device="cpu",
-    compute_type="int8",
-    num_workers=4
-)
-logger.info("Whisper model loaded successfully.")
+whisper_model = whisper.load_model("small")
+logger.info("✅ Whisper model loaded successfully.")
 
-# Gemini model with safety settings
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-]
-
-gemini_model = genai.GenerativeModel(
-    'gemini-1.5-flash',
-    safety_settings=safety_settings,
-    generation_config=genai.types.GenerationConfig(
-        temperature=0.7,
-        max_output_tokens=200, 
-    )
-)
-
-# Conversation context
 conversation_history = {}
 
 def get_therapy_prompt(emotion: str, history: list = None) -> str:
-    base_prompt = f"""You are EVA, a compassionate and professional AI therapy assistant. 
+    """Generate a soft, empathetic therapy context for EVA."""
+    base_prompt = f"""
+You are EVA, a compassionate and emotionally intelligent AI therapist.
+Your tone should be warm, caring, and understanding.
 
 Current user emotion: {emotion}
 
 Guidelines:
-- Be warm, empathetic, and understanding
-- Keep responses conversational and natural (2-3 sentences max)
-- If emotion is 'sad' or 'distressed', offer comfort and validation
-- If emotion is 'happy', share in their joy while being supportive
-- If emotion is 'neutral', talk to them more to know how they feel
-- Use therapeutic techniques like active listening and reflection
-- Ask open-ended questions to encourage sharing
-- Never provide medical diagnoses or replace professional therapy
-
+- Speak with empathy, not clinical detachment.
+- Keep responses natural (2-3 sentences).
+- Offer gentle reflections, comfort, or encouragement.
+- If emotion is 'sad', be comforting and kind.
+- If emotion is 'happy', celebrate with warmth.
+- If 'neutral', ask gentle questions to explore feelings.
+- Avoid robotic and overly formal responses.
 """
-    
     if history and len(history) > 0:
-        base_prompt += f"\nRecent conversation context:\n"
-        for msg in history[-3:]:  # Last 3 exchanges for context
+        base_prompt += "\n\nRecent conversation:\n"
+        for msg in history[-3:]:
             base_prompt += f"User: {msg['user']}\nEVA: {msg['eva']}\n"
-    
-    base_prompt += "\nRespond naturally and therapeutically:"
-    return base_prompt
 
-async def get_gemini_response_with_emotion(text: str, emotion: str, session_id: str) -> str:
+    base_prompt += "\nRespond naturally as EVA:"
+    return base_prompt.strip()
+
+async def get_gemini_response(text: str, emotion: str, session_id: str) -> str:
+    """Generate empathetic response using Gemini 1.5 Flash."""
     try:
         history = conversation_history.get(session_id, [])
         prompt = get_therapy_prompt(emotion, history)
         full_prompt = f"{prompt}\n\nUser: {text}\nEVA:"
-        
-        response = await gemini_model.generate_content_async(full_prompt)
-        reply = response.text.strip()
-        
-        # Update conversation history
-        if session_id not in conversation_history:
-            conversation_history[session_id] = []
-        
-        conversation_history[session_id].append({
+
+        response = gemini_model.generate_content(full_prompt)
+        reply = response.text.strip() if hasattr(response, "text") else "I'm here for you."
+
+        conversation_history.setdefault(session_id, []).append({
             "user": text,
             "eva": reply,
             "emotion": emotion
         })
-        
-        # Keeping only last 10 exchanges to manage memory
-        if len(conversation_history[session_id]) > 10:
-            conversation_history[session_id] = conversation_history[session_id][-10:]
-            
-        return reply
-        
+        conversation_history[session_id] = conversation_history[session_id][-10:]
+
+        return reply or "I'm here for you. Could you tell me a bit more about what’s going on?"
+
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
-        return "I'm here for you. Sometimes I need a moment to process. Could you tell me more about how you're feeling?"
+        return "I'm really sorry, I'm having trouble responding right now. Could you tell me more about how you're feeling?"
 
-#Audio processing
 @app.post("/process-audio/")
 async def process_audio(
-    file: UploadFile, 
+    file: UploadFile,
     emotion: Optional[str] = Form("neutral"),
     session_id: Optional[str] = Form(None)
 ):
     if not session_id:
         session_id = str(uuid.uuid4())
-    
+
     temp_path = f"temp_{uuid.uuid4()}.wav"
-    
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        segments, info = whisper_model.transcribe(
-            temp_path, 
-            beam_size=5,
-            vad_filter=True,  # Voice activity detection
-            vad_parameters=dict(min_silence_duration_ms=500)
-        )
-        
-        transcription = " ".join([segment.text.strip() for segment in segments])
-        
-        if not transcription.strip():
-            transcription = "I couldn't hear you clearly. Could you please repeat that?"
-            reply = "I'm having trouble hearing you. Could you please speak a bit louder or check your microphone?"
+        result = whisper_model.transcribe(temp_path)
+        transcription = result["text"].strip()
+
+        if not transcription:
+            transcription = "I couldn’t hear you clearly."
+            reply = "I'm having trouble hearing you. Could you repeat that?"
         else:
-            reply = await get_gemini_response_with_emotion(transcription, emotion, session_id)
+            reply = await get_gemini_response(transcription, emotion, session_id)
 
         return JSONResponse({
             "transcription": transcription,
@@ -168,8 +130,8 @@ async def process_audio(
     except Exception as e:
         logger.error(f"Audio processing error: {e}")
         return JSONResponse({
-            "transcription": "Sorry, I had trouble processing your audio.",
-            "reply": "I'm having some technical difficulties. Could you try typing your message instead?",
+            "transcription": "Error processing audio.",
+            "reply": "I couldn’t process that. Could you try again?",
             "session_id": session_id,
             "error": True
         })
@@ -177,92 +139,84 @@ async def process_audio(
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-# Text processing
+
 @app.post("/process-text/")
 async def process_text(
-    text: str = Form(...), 
+    text: str = Form(...),
     emotion: Optional[str] = Form("neutral"),
     session_id: Optional[str] = Form(None)
 ):
     if not session_id:
         session_id = str(uuid.uuid4())
-    
+
     try:
-        reply = await get_gemini_response_with_emotion(text, emotion, session_id)
-        
+        reply = await get_gemini_response(text, emotion, session_id)
         return JSONResponse({
             "reply": reply,
             "session_id": session_id,
             "emotion_detected": emotion
         })
-        
     except Exception as e:
         logger.error(f"Text processing error: {e}")
         return JSONResponse({
-            "reply": "I'm here to listen. Sometimes I need a moment to gather my thoughts. How are you feeling right now?",
+            "reply": "I'm here for you. Let's take a moment to breathe together.",
             "session_id": session_id,
             "error": True
         })
 
-# OpenAI TTS endpoint
 @app.post("/generate-speech/")
 async def generate_speech(text: str = Form(...)):
-    """Generate high-quality speech using OpenAI TTS."""
+    """Convert text into speech using ElevenLabs."""
     try:
-        response = openai_client.audio.speech.create(
-            model="tts-1", 
-            voice="nova",  
-            input=text,
-            speed=0.9     
+        if not tts_client:
+            raise ValueError("Missing ELEVENLABS_API_KEY.")
+
+        response = tts_client.text_to_speech.convert(
+            voice_id=TTS_VOICE,
+            model_id="eleven_turbo_v2_5",
+            text=text,
+            output_format="mp3_44100_128"
         )
-        def generate_audio():
-            for chunk in response.iter_bytes():
-                yield chunk
-        
+
+        audio_data = b"".join(response)
         return StreamingResponse(
-            generate_audio(),
+            io.BytesIO(audio_data),
             media_type="audio/mpeg",
             headers={"Content-Disposition": "inline; filename=speech.mp3"}
         )
-        
+
     except Exception as e:
         logger.error(f"TTS generation error: {e}")
         return JSONResponse({"error": "Speech generation failed"}, status_code=500)
 
-# WebSocket real-time emotion updates
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    
     try:
         while True:
             data = await websocket.receive_text()
             emotion_data = json.loads(data)
-            
-            if session_id in conversation_history:
-                pass
-                
             await websocket.send_text(json.dumps({
                 "status": "emotion_received",
                 "emotion": emotion_data.get("emotion", "neutral")
             }))
-            
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session: {session_id}")
 
-# Health check endpoint
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "services": {
-        "whisper": "loaded",
-        "gemini": "configured",
-        "openai": "configured"
-    }}
+    return {
+        "status": "healthy",
+        "services": {
+            "whisper": "loaded",
+            "gemini": "configured",
+            "tts": "ready" if ELEVENLABS_API_KEY else "missing"
+        }
+    }
 
-# Cleanup endpoint
 @app.delete("/session/{session_id}")
 async def cleanup_session(session_id: str):
-    """Clean up session data."""
     if session_id in conversation_history:
         del conversation_history[session_id]
         return {"status": "session_cleared"}
