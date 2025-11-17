@@ -11,7 +11,7 @@ EVA version- 1.0.0 (first prototype)
 * **Multimodal Interaction**: Seamlessly switch between **voice** and **text** input for natural conversation.
 * **Real-time Emotion Detection**: Utilizes the user's webcam and TensorFlow.js to analyze facial expressions, allowing EVA to adapt its responses based on the user's emotional state (e.g., happy, sad, neutral).
 * **Empathetic Conversational AI**: Powered by **Google Gemini API**, EVA generates context-aware, warm, and therapeutic responses tailored to the conversation history and detected emotions.
-* **High-Fidelity Voice Output**: Leverages **OpenAI's Text-to-Speech (TTS)** API to produce realistic and natural-sounding vocal responses, enhancing the conversational experience.
+* **High-Fidelity Voice Output**: Leverages **ElevenLab's Text-to-Speech (TTS)** API to produce realistic and natural-sounding vocal responses, enhancing the conversational experience.
 * **Accurate Speech-to-Text**: Integrates the `faster-whisper` model for efficient and precise transcription of spoken words.
 * **Intelligent Session Management**: Maintains a coherent conversation flow by tracking history for each session, ensuring context is not lost.
 
@@ -26,7 +26,7 @@ EVA is built with a Python backend and a vanilla JavaScript frontend, orchestrat
 * **Other**:
     * **Response Generation**: Google Gemini (`gemini-1.5-flash`)
     * **Speech-to-Text (STT)**: `faster-whisper`
-    * **Text-to-Speech (TTS)**: OpenAI TTS (`tts-1`)
+    * **Text-to-Speech (TTS)**: ElevenLab TTS
     * **Facial Emotion Recognition**: **TensorFlow.js** with MediaPipe Face Mesh
 
 ### Conversation Flow
@@ -36,7 +36,7 @@ EVA is built with a Python backend and a vanilla JavaScript frontend, orchestrat
     * **Voice**: The audio is sent to the backend, transcribed by `faster-whisper`.
     * **Text**: The typed text is sent directly.
 4.  **AI Response Generation**: The transcribed text, along with the detected emotion and recent conversation history, is sent to the **Gemini API** to generate an empathetic response.
-5.  **Voice Synthesis**: The generated text response is converted into speech using the **OpenAI TTS API**.
+5.  **Voice Synthesis**: The generated text response is converted into speech using the **ElevenLab TTS API**.
 6.  **Frontend Output**: The text response is displayed in the chat, and the synthesized audio is played back to the user.
 
 ---
@@ -48,11 +48,11 @@ EVA is built with a Python backend and a vanilla JavaScript frontend, orchestrat
 
 #### API Keys
 * **Google Gemini API Key**: For AI response generation.
-* **OpenAI API Key**: For text-to-speech functionality.
+* **ELevenLabs API Key**: For text-to-speech functionality.
   
 #### Core Libraries
 * **Backend**: `FastAPI`, `Uvicorn`
-* **AI/ML**: `google-generativeai`, `openai`, `faster-whisper`
+* **AI/ML**: `google-generativeai`, `ElevenLabs`, `faster-whisper`
 * **Frontend**: `TensorFlow.js` (for emotion detection)
 
 ---
@@ -60,6 +60,7 @@ EVA is built with a Python backend and a vanilla JavaScript frontend, orchestrat
 ## Acknowledgements
 
 * Google Gemini for the incredible generative AI capabilities.
-* OpenAI for the high-quality TTS and Whisper models.
+* ElevenLabs for the high-quality TTS.
+* OpenAI for the Whisper models.
 * TensorFlow.js and MediaPipe for making client-side ML accessible.
 * FastAPI for enabling the creation of fast, modern Python web services.
